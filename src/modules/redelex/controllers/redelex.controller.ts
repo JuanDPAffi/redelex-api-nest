@@ -35,6 +35,23 @@ export class RedelexController {
   }
 
   /**
+   * Nuevo Endpoint para obtener informe Inmobiliar
+   * GET /api/redelex/informe-inmobiliaria/:informeId
+   */
+  @Get('informe-inmobiliaria/:informeId')
+  async getInformeInmobiliar(
+    @Param('informeId', ParseIntPipe) informeId: number,
+  ) {
+    const data = await this.redelexService.getInformeInmobiliar(informeId);
+
+    return {
+      success: true,
+      count: data.length,
+      data,
+    };
+  }
+
+  /**
    * Sincronizar cédula de procesos desde un informe
    * POST /api/redelex/sync-informe/:informeId
    */

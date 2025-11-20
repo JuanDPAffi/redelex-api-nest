@@ -16,6 +16,9 @@ import {
   ProcesoResumenDto,
   ProcesosPorIdentificacionResponse,
   InformeCedulaItem,
+  MedidaCautelarDto,
+  InformeInmobiliarRaw, // Importado
+  InformeInmobiliarDto, // Importado
 } from '../dto/redelex.dto';
 
 @Injectable()
@@ -115,6 +118,45 @@ export class RedelexService {
     return this.mapRedelexProcesoToDto(raw);
   }
 
+  // --- NUEVO MÉTODO PARA INMOBILIAR ---
+  async getInformeInmobiliar(informeId: number): Promise<InformeInmobiliarDto[]> {
+    if (!this.apiKey) {
+      throw new Error('REDELEX_API_KEY no configurado');
+    }
+
+    // 1. Consumir API Externa
+    const data = await this.secureRedelexGet(
+      `${this.baseUrl}/Informes/GetInformeJson`,
+      {
+        token: this.apiKey,
+        informeId,
+      },
+    );
+
+    // 2. Parsear el string JSON que viene dentro de la respuesta
+    const rawString = data.jsonString as string;
+    if (!rawString) return [];
+    
+    const items = JSON.parse(rawString) as InformeInmobiliarRaw[];
+
+    // 3. Mapear a DTO limpio
+    return items.map((item) => ({
+      idProceso: item['ID Proceso'],
+      claseProceso: item['Clase Proceso'],
+      demandadoIdentificacion: item['Demandado - Identificacion'],
+      demandadoNombre: item['Demandado - Nombre'],
+      demandanteIdentificacion: item['Demandante - Identificacion'],
+      demandanteNombre: item['Demandante - Nombre'],
+      codigoAlterno: item['Codigo Alterno'],
+      etapaProcesal: item['Etapa Procesal'],
+      fechaRecepcionProceso: item['Fecha Recepcion Proceso'],
+      sentenciaPrimeraInstancia: item['Sentencia - Primera Instancia'],
+      despacho: item['Despacho'],
+      numeroRadicacion: item['Numero Radicacion'] ? item['Numero Radicacion'].replace(/'/g, '') : '', // Quitamos comillas extra si vienen
+      ciudadInmueble: item['CIUDAD DEL INMUEBLE'],
+    }));
+  }
+
   async syncInformeCedulaProceso(informeId: number) {
     if (!this.apiKey) {
       throw new Error('REDELEX_API_KEY no configurado');
@@ -131,7 +173,6 @@ export class RedelexService {
     const raw = data.jsonString as string;
     const items = JSON.parse(raw) as InformeCedulaItem[];
 
-    // Set para saber qué procesos vienen en este JSON
     const procesosFromJson = new Set<number>();
 
     const bulkOps = items.map((item) => {
@@ -166,7 +207,6 @@ export class RedelexService {
       };
     });
 
-    // Si no viene ningún proceso en el JSON, borramos todo
     if (bulkOps.length === 0) {
       const deleteResult = await this.cedulaProcesoModel.deleteMany({});
       return {
@@ -240,20 +280,33 @@ export class RedelexService {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
+  private mapMedidaCautelar(medida: any): MedidaCautelarDto {
+    return {
+      tipoBien: medida.TipoBien ?? null,
+      sujeto: medida.Sujeto ?? null,
+      tipoMedida: medida.TipoMedida ?? null,
+      medidaEfectiva: medida.MedidaEfectiva ?? null,
+      avaluoJudicial: medida.AvaluoJudicial ?? null,
+      observaciones: medida.Observaciones ?? null,
+    };
+  }
+
   private mapRedelexProcesoToDto(raw: any): ProcesoDetalleDto | null {
     if (!raw || !raw.proceso) return null;
     const p = raw.proceso;
 
     const sujetos = Array.isArray(p.Sujetos) ? p.Sujetos : [];
-    const demandado =
-      sujetos.find((s: any) => s.Tipo === 'DEMANDADO') || null;
-    const demandante =
-      sujetos.find((s: any) => s.Tipo === 'DEMANDANTE') || null;
-
+    const abogados = Array.isArray(p.Abogados) ? p.Abogados : [];
     const medidas = Array.isArray(p.MedidasCautelares)
       ? p.MedidasCautelares
       : [];
-    const medida = medidas.length > 0 ? medidas[0] : null;
+
+    const medidasValidas: MedidaCautelarDto[] = medidas
+      .filter((m: any) => {
+        const efectiva = (m.MedidaEfectiva || '').trim().toUpperCase();
+        return efectiva !== 'N';
+      })
+      .map((m: any) => this.mapMedidaCautelar(m));
 
     const actuaciones = Array.isArray(p.Actuaciones) ? p.Actuaciones : [];
     const ultimaActuacion =
@@ -278,61 +331,34 @@ export class RedelexService {
     const calif = p.CalificacionContingenciaProceso || {};
 
     return {
+      sujetos: sujetos,
       idProceso: p.ProcesoId ?? null,
       numeroRadicacion: p.Radicacion ?? null,
       codigoAlterno: p.CodigoAlterno ?? null,
-
       claseProceso: p.ClaseProceso ?? null,
       etapaProcesal: p.Etapa ?? null,
       estado: p.Estado ?? null,
       regional: p.Regional ?? null,
       tema: p.Tema ?? null,
-
-      demandanteNombre: demandante?.Nombre ?? null,
-      demandanteIdentificacion: demandante?.NumeroIdentificacion ?? null,
-      demandadoNombre: demandado?.Nombre ?? null,
-      demandadoIdentificacion: demandado?.NumeroIdentificacion ?? null,
-
       despacho: p.DespachoConocimiento ?? null,
       despachoOrigen: p.DespachoOrigen ?? null,
-
       fechaAdmisionDemanda: p.FechaAdmisionDemanda ?? null,
       fechaCreacion: p.FechaCreacion ?? null,
       fechaEntregaAbogado: p.FechaEntregaAbogado ?? null,
       fechaRecepcionProceso: p.FechaRecepcionProceso ?? null,
-
       ubicacionContrato: campoUbicacionContrato?.Valor?.trim() ?? null,
-
+      camposPersonalizados: camposPersonalizados,
       fechaAceptacionSubrogacion: null,
       fechaPresentacionSubrogacion: null,
       motivoNoSubrogacion: null,
-
       calificacion: calif.Calificacion ?? null,
-
       sentenciaPrimeraInstanciaResultado: p.SentenciaPrimeraInstancia ?? null,
       sentenciaPrimeraInstanciaFecha: p.FechaSentenciaPrimeraInstancia ?? null,
-
-      medidasCautelares: medida
-        ? {
-            id: medida.Id ?? null,
-            fecha: medida.Fecha ?? null,
-            tipoMedida: medida.TipoMedida ?? null,
-            medidaEfectiva: medida.MedidaEfectiva ?? null,
-            sujetoNombre: medida.Sujeto ?? null,
-            tipoBien: medida.TipoBien ?? null,
-            direccion: medida.Descripcion ?? null,
-            area: medida.Area ?? null,
-            avaluoJudicial: medida.AvaluoJudicial ?? null,
-            observaciones: medida.Observaciones ?? null,
-          }
-        : null,
-
+      medidasCautelares: medidasValidas,
       ultimaActuacionFecha: ultimaActuacion?.FechaActuacion ?? null,
       ultimaActuacionTipo: ultimaActuacion?.Tipo ?? null,
       ultimaActuacionObservacion: ultimaActuacion?.Observacion ?? null,
-
-      abogadoPrincipal: p.ApoderadoPrincipal ?? null,
-      abogadosInternos: Array.isArray(p.Abogados) ? p.Abogados : [],
+      abogados: abogados,
     };
   }
 }
