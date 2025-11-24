@@ -29,7 +29,7 @@ import { InmobiliariaModule } from '../inmobiliaria/inmobiliaria.module';
       useFactory: async (configService: ConfigService) => ({
         secret: configService.get<string>('JWT_SECRET') || 'default_secret',
         signOptions: {
-          expiresIn: '7d',
+          expiresIn: '30m',
         },
       }),
       inject: [ConfigService],
