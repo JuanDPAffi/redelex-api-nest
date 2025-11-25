@@ -150,6 +150,7 @@ export class AuthService {
   async login(loginDto: LoginDto) {
     const { email, password } = loginDto;
 
+    // Buscamos al usuario (incluyendo password para comparar)
     const user = await this.userModel.findOne({
       email: email.toLowerCase(),
     }).select('+password');
@@ -158,6 +159,7 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
+    // 1. Validaciones previas
     if (!user.isVerified) {
       throw new UnauthorizedException('Debes activar tu cuenta. Revisa tu correo electrónico.');
     }
@@ -166,10 +168,44 @@ export class AuthService {
       throw new UnauthorizedException('Su cuenta ha sido desactivada. Contacte al administrador.');
     }
 
+    // 2. Verificar Contraseña
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
-      throw new UnauthorizedException('Credenciales inválidas');
+      // --- LÓGICA DE INTENTOS FALLIDOS ---
+      
+      // Incrementamos el contador (si no existe, empieza en 0)
+      const currentAttempts = (user.loginAttempts || 0) + 1;
+      const maxAttempts = 3;
+      const remaining = maxAttempts - currentAttempts;
+
+      // Actualizamos el contador en la BD
+      user.loginAttempts = currentAttempts;
+      
+      if (currentAttempts >= maxAttempts) {
+        // BLOQUEO DE CUENTA
+        user.isActive = false; // Inactivamos al usuario
+        await user.save();
+        
+        throw new UnauthorizedException(
+          'Su cuenta ha sido desactivada por múltiples intentos fallidos. Contacte al administrador.'
+        );
+      } else {
+        // ADVERTENCIA
+        await user.save();
+        
+        throw new UnauthorizedException(
+          `Credenciales inválidas. Advertencia: Le quedan ${remaining} intento(s) antes de bloquear su cuenta.`
+        );
+      }
+    }
+
+    // --- SI LLEGA AQUÍ, EL LOGIN FUE EXITOSO ---
+
+    // Reiniciamos el contador de intentos a 0
+    if (user.loginAttempts > 0) {
+      user.loginAttempts = 0;
+      await user.save();
     }
 
     const token = this.generateToken(user);

@@ -30,6 +30,10 @@ export class User {
   @Prop({ default: true })
   isActive: boolean;
 
+  // AGREGA ESTE NUEVO CAMPO
+  @Prop({ default: 0 })
+  loginAttempts: number;
+
   // NUEVO: Verificación de correo (Punto 4)
   @Prop({ default: false })
   isVerified: boolean;
