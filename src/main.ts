@@ -1,30 +1,34 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import * as cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Habilitar CORS
-  app.enableCors();
+  // 1. Configuración de CORS para permitir Cookies (Credenciales)
+  app.enableCors({
+    origin: 'https://estadosprocesales.affi.net', // <--- TU FRONTEND EXACTO
+    credentials: true, // <--- Obligatorio para que viajen las cookies
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+  });
 
-  // Validación global de DTOs
+  // 2. Middleware para leer cookies
+  app.use(cookieParser());
+
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true, // Elimina propiedades no definidas en el DTO
-      forbidNonWhitelisted: true, // Lanza error si hay propiedades extra
-      transform: true, // Transforma los payloads a instancias de DTO
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
     }),
   );
 
-  // Prefijo global para todas las rutas
   app.setGlobalPrefix('api');
 
   const PORT = process.env.PORT || 4000;
-
   await app.listen(PORT);
-
-  console.log(`🚀 API Redelex corriendo en http://localhost:${PORT}`);
+  console.log(`🚀 API Redelex corriendo en puerto ${PORT}`);
 }
 
 bootstrap();
