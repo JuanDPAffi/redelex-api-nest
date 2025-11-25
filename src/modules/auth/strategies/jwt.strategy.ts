@@ -44,7 +44,6 @@ async validate(payload: JwtPayload) {
       throw new UnauthorizedException('Su cuenta ha sido desactivada');
     }
 
-    // AQUI ESTABA EL ERROR: Faltaba pasar el nombre
     return {
       id: user._id.toString(),
       name: user.name,
