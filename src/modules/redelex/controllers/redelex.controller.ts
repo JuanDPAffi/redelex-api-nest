@@ -6,143 +6,109 @@ import {
   UseGuards,
   BadRequestException,
   NotFoundException,
-  ForbiddenException, // <--- IMPORTANTE
+  ForbiddenException,
+  UnauthorizedException,
   ParseIntPipe,
-  Req, // <--- IMPORTANTE: Para leer el usuario del token
+  Req,
+  Headers, // <--- Importamos Headers
+  InternalServerErrorException
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config'; // <--- Importamos ConfigService
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RedelexService } from '../services/redelex.service';
 
+// QUITAMOS EL GUARD GLOBAL DE AQUÍ
 @Controller('redelex')
-@UseGuards(JwtAuthGuard)
 export class RedelexController {
-  constructor(private readonly redelexService: RedelexService) {}
+  constructor(
+    private readonly redelexService: RedelexService,
+    private readonly configService: ConfigService // Inyectamos Config
+  ) {}
 
-  /**
-   * 1. NUEVO ENDPOINT: Mis Procesos (Para Inmobiliarias)
-   * GET /api/redelex/mis-procesos
-   * No recibe parámetros, usa el NIT del usuario logueado.
-   */
+  // ============================================================
+  // ENDPOINTS PÚBLICOS / FRONTEND (Requieren JWT Usuario)
+  // ============================================================
+
+  @UseGuards(JwtAuthGuard) // <--- Lo movemos aquí
   @Get('mis-procesos')
   async getMisProcesos(@Req() req) {
-    // Obtenemos el NIT seguro desde el Token (inyectado por JwtStrategy)
     const userNit = req.user.nit;
-
-    if (!userNit) {
-      throw new BadRequestException('Su usuario no tiene un NIT asociado para consultar.');
-    }
-
-    // Reutilizamos la lógica de búsqueda, pero forzando el NIT del usuario
+    if (!userNit) throw new BadRequestException('Su usuario no tiene un NIT asociado.');
     return this.redelexService.getProcesosByIdentificacion(userNit);
   }
 
-  /**
-   * 2. MODIFICADO: Listar procesos por identificación (Solo Admins)
-   * GET /api/redelex/procesos-por-identificacion/:identificacion
-   */
+  @UseGuards(JwtAuthGuard) // <--- Lo movemos aquí
   @Get('procesos-por-identificacion/:identificacion')
-  async getProcesosPorIdentificacion(
-    @Param('identificacion') identificacion: string,
-    @Req() req,
-  ) {
-    // SEGURIDAD: Solo los administradores pueden buscar por cualquier cédula
-    if (req.user.role !== 'admin') {
-      throw new ForbiddenException('No tiene permisos para realizar búsquedas abiertas.');
-    }
-
-    if (!identificacion || identificacion.trim() === '') {
-      throw new BadRequestException('La identificación no puede estar vacía');
-    }
-
+  async getProcesosPorIdentificacion(@Param('identificacion') identificacion: string, @Req() req) {
+    if (req.user.role !== 'admin') throw new ForbiddenException('No tiene permisos.');
+    if (!identificacion) throw new BadRequestException('La identificación es obligatoria');
     return this.redelexService.getProcesosByIdentificacion(identificacion);
   }
 
-  /**
-   * 3. MODIFICADO: Obtener detalle (Blindado para que no vean procesos ajenos por ID)
-   * GET /api/redelex/proceso/:id
-   */
+  @UseGuards(JwtAuthGuard) // <--- Lo movemos aquí
   @Get('proceso/:id')
-  async getProcesoDetalle(
-    @Param('id', ParseIntPipe) id: number, 
-    @Req() req
-  ) {
-    // 1. Obtener datos
+  async getProcesoDetalle(@Param('id', ParseIntPipe) id: number, @Req() req) {
     const data = await this.redelexService.getProcesoDetalleById(id);
+    if (!data) throw new NotFoundException('Proceso no encontrado');
 
-    if (!data) {
-      throw new NotFoundException('Proceso no encontrado en Redelex');
-    }
-
-    // 2. SEGURIDAD: Validación de Propiedad
     if (req.user.role !== 'admin') {
       const userNit = req.user.nit;
+      if (!userNit) throw new ForbiddenException('Usuario sin NIT.');
       
-      if (!userNit) {
-        throw new ForbiddenException('Su usuario no tiene un NIT configurado.');
-      }
-
-      // Limpiamos NIT usuario (solo números)
       const cleanUserNit = String(userNit).replace(/[^0-9]/g, '');
-
-      // DEBUG: Ver qué demonios tiene el array de sujetos
-      console.log('🔍 Analizando sujetos del proceso:', id);
       
-      // Validamos que existan sujetos
+      // Validación de sujetos (Fix anterior)
       if (!data.sujetos || !Array.isArray(data.sujetos)) {
-        console.warn('⚠️ Array de sujetos vacío o inválido');
-        throw new ForbiddenException('No es posible verificar la propiedad (Sin sujetos).');
+         throw new ForbiddenException('Datos del proceso incompletos (sin sujetos).');
       }
 
       const esPropio = data.sujetos.some((sujeto: any) => {
-        // CORRECCIÓN CLAVE: Buscamos la propiedad correcta (NumeroIdentificacion)
-        // Usamos || para soportar variaciones por si la API cambia
-        const rawId = sujeto.NumeroIdentificacion || sujeto.Identificacion || sujeto.identificacion || '';
-        
-        if (!rawId) {
-            console.log('   ⚠️ Sujeto sin identificación:', sujeto);
-            return false;
-        }
-
+        const rawId = sujeto.NumeroIdentificacion || sujeto.Identificacion || '';
         const cleanIdSujeto = String(rawId).replace(/[^0-9]/g, '');
-        
-        // Debug interno
-        // console.log(`   Comparando: ${cleanUserNit} vs ${cleanIdSujeto}`);
-
-        // Coincidencia flexible (contiene)
         return cleanIdSujeto.includes(cleanUserNit) || cleanUserNit.includes(cleanIdSujeto);
       });
 
-      if (!esPropio) {
-        // Imprimimos los sujetos para que veas en consola qué llegó realmente si falla
-        console.error('⛔ Acceso denegado. Los sujetos encontrados fueron:', JSON.stringify(data.sujetos.map(s => s.NumeroIdentificacion || s.Identificacion)));
-        throw new ForbiddenException(`No tiene permisos. Su NIT (${userNit}) no coincide.`);
-      }
+      if (!esPropio) throw new ForbiddenException('No tiene permisos sobre este proceso.');
     }
-
-    return {
-      success: true,
-      data,
-    };
+    return { success: true, data };
   }
 
+  @UseGuards(JwtAuthGuard) // <--- Lo movemos aquí
   @Get('informe-inmobiliaria/:informeId')
-  async getInformeInmobiliar(
-    @Param('informeId', ParseIntPipe) informeId: number,
-    @Req() req
-  ) {
+  async getInformeInmobiliar(@Param('informeId', ParseIntPipe) informeId: number, @Req() req) {
     if (req.user.role !== 'admin') throw new ForbiddenException('Acceso denegado');
-    
     const data = await this.redelexService.getInformeInmobiliaria(informeId);
     return { success: true, count: data.length, data };
   }
 
+  // ============================================================
+  // ENDPOINTS DE SISTEMA / BACKEND (Requieren System Token)
+  // ============================================================
+
+  /**
+   * Endpoint protegido por SYSTEM_TASK_TOKEN
+   * No requiere usuario logueado, solo la llave maestra en el Header.
+   */
   @Post('sync-informe/:informeId')
   async syncInformeCedula(
     @Param('informeId', ParseIntPipe) informeId: number,
-    @Req() req
+    @Headers('authorization') authHeader: string // Leemos el header manual
   ) {
-    if (req.user.role !== 'admin') throw new ForbiddenException('Acceso denegado');
+    // 1. Obtener la llave maestra de las variables de entorno
+    const systemToken = this.configService.get<string>('SYSTEM_TASK_TOKEN');
 
+    // 2. Validar que la llave exista en el servidor
+    if (!systemToken) {
+      console.error('❌ SYSTEM_TASK_TOKEN no configurado en el servidor');
+      throw new InternalServerErrorException('Error de configuración en el servidor');
+    }
+
+    // 3. Comparar el header con la llave (Simple Auth)
+    if (authHeader !== systemToken) {
+      throw new UnauthorizedException('Token de sistema inválido o ausente');
+    }
+
+    // 4. Ejecutar proceso
     const result = await this.redelexService.syncInformeCedulaProceso(informeId);
     return { success: true, message: 'Sincronización completada', ...result };
   }
