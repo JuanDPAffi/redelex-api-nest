@@ -26,7 +26,7 @@ export class User {
   })
   role: string;
 
-  // NUEVO: Control de acceso (Puntos 6 y 7)
+  // Control de acceso
   @Prop({ default: true })
   isActive: boolean;
 
@@ -34,7 +34,7 @@ export class User {
   @Prop({ default: 0 })
   loginAttempts: number;
 
-  // NUEVO: Verificación de correo (Punto 4)
+  // Verificación de correo
   @Prop({ default: false })
   isVerified: boolean;
 
@@ -42,7 +42,10 @@ export class User {
   @Prop({ select: false }) // Oculto por seguridad
   activationToken?: string;
 
-  // NUEVOS: Datos de empresa (Punto 3)
+  // NUEVOS: Datos de empresa 
+  @Prop({ required: false, trim: true})
+  nombreInmobiliaria?: string;
+
   @Prop({ required: false, trim: true })
   nit?: string;
 

@@ -22,8 +22,7 @@ import {
   RequestPasswordResetDto,
   ResetPasswordDto,
 } from '../dto/auth.dto';
-// 1. IMPORTAR EL SCHEMA DE INMOBILIARIA
-import { Inmobiliaria, InmobiliariaDocument } from '../../auth/schemas/inmobiliaria.schema'; // <--- NUEVO
+import { Inmobiliaria, InmobiliariaDocument } from '../../auth/schemas/inmobiliaria.schema';
 
 @Injectable()
 export class AuthService {
@@ -32,8 +31,8 @@ export class AuthService {
     private readonly userModel: Model<UserDocument>,
     
     // 2. INYECTAR EL MODELO DE INMOBILIARIA
-    @InjectModel(Inmobiliaria.name) // <--- NUEVO
-    private readonly inmobiliariaModel: Model<InmobiliariaDocument>, // <--- NUEVO
+    @InjectModel(Inmobiliaria.name)
+    private readonly inmobiliariaModel: Model<InmobiliariaDocument>,
 
     @InjectModel(PasswordResetToken.name)
     private readonly passwordResetTokenModel: Model<PasswordResetTokenDocument>,
@@ -77,10 +76,6 @@ export class AuthService {
     if (!inmobiliaria.isActive) {
       throw new UnauthorizedException('Esta inmobiliaria se encuentra inactiva');
     }
-
-    // ---------------------------------------------------------
-    // NUEVA LÓGICA CORREGIDA
-    // ---------------------------------------------------------
 
     // Normalizamos el email para las comparaciones
     const emailLower = email.toLowerCase();
@@ -132,6 +127,7 @@ export class AuthService {
       email: emailLower,
       password: hashedPassword,
       role: assignedRole,
+      nameInmo: inmobiliaria.nombreInmobiliaria,
       nit, 
       codigoInmobiliaria,
       activationToken: activationToken, 

@@ -5,6 +5,9 @@ export type InmobiliariaDocument = Inmobiliaria & Document;
 
 @Schema({ timestamps: true })
 export class Inmobiliaria {
+  @Prop({ required: true, trim: true})
+  nombreInmobiliaria: string;
+
   @Prop({ required: true, trim: true })
   nit: string;
 
@@ -12,7 +15,7 @@ export class Inmobiliaria {
   codigo: string;
 
   @Prop({ default: null }) 
-  emailRegistrado: string | null; // Aquí guardaremos al dueño de la cuenta
+  emailRegistrado: string | null;
 
   @Prop({ default: true })
   isActive: boolean;

@@ -1,16 +1,21 @@
 import { Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
 import { UsersService } from './users.service';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+// 1. CAMBIO: Importamos el Guard Híbrido en lugar del JwtAuthGuard
+import { SystemOrJwtGuard } from '../../common/guards/system-or-jwt.guard'; 
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 
 @Controller('users')
-@UseGuards(JwtAuthGuard, RolesGuard) // 1. Protegemos con JWT y Roles
+// 2. CAMBIO: Usamos SystemOrJwtGuard. 
+// Esto permite entrar con Token de Sistema O con JWT de usuario.
+@UseGuards(SystemOrJwtGuard, RolesGuard) 
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
-  @Roles('admin') // 2. Solo admins pueden ver la lista
+  @Roles('admin') 
+  // NOTA: Como el SystemOrJwtGuard inyecta un usuario con rol 'admin' cuando
+  // detecta la llave maestra, este @Roles('admin') dejará pasar al sistema automáticamente.
   async findAll() {
     return this.usersService.findAll();
   }
@@ -21,7 +26,7 @@ export class UsersController {
     return this.usersService.findOne(id);
   }
 
-  @Patch(':id/status') // Endpoint para activar/desactivar
+  @Patch(':id/status')
   @Roles('admin')
   async toggleStatus(@Param('id') id: string) {
     return this.usersService.toggleStatus(id);

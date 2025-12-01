@@ -26,6 +26,7 @@ export class RedelexService {
   private readonly logger = new Logger(RedelexService.name);
   private readonly baseUrl = 'https://cloudapp.redelex.com/api';
   private readonly apiKey: string;
+  private readonly INFORME_MIS_PROCESOS_ID = 5632;
 
   // NUEVO: ID de licencia para pasar el WAF
   private readonly licenseId = '2117C477-209F-44F5-9587-783D9F25BA8B';
@@ -44,6 +45,61 @@ export class RedelexService {
     if (!this.apiKey) {
       this.logger.warn('REDELEX_API_KEY no está configurado');
     }
+  }
+
+  async getMisProcesosLive(userNit: string) {
+    if (!this.apiKey) throw new Error('REDELEX_API_KEY no configurado');
+
+    // 1. Descargamos el JSON completo del informe 5632
+    // No guardamos en BD, solo lo traemos a memoria RAM
+    const data = await this.secureRedelexGet(
+      `${this.baseUrl}/Informes/GetInformeJson`,
+      { token: this.apiKey, informeId: this.INFORME_MIS_PROCESOS_ID },
+    );
+
+    const rawString = data.jsonString as string;
+    if (!rawString) return { success: true, identificacion: userNit, procesos: [] };
+
+    const items = JSON.parse(rawString) as any[];
+
+    // 2. FILTRADO EN MEMORIA
+    // Buscamos solo los registros donde el Demandante (Inmobiliaria) coincida con el NIT del usuario
+    const nitBusqueda = userNit.trim();
+    
+    const misProcesos = items.filter((item) => {
+      // El informe trae ej: "805000082-4", tu usuario tiene "805000082"
+      // Usamos includes para que coincida aunque tenga dígito de verificación
+      const nitInforme = String(item['Demandante - Identificacion'] || '');
+      return nitInforme.includes(nitBusqueda);
+    });
+
+    // 3. MAPEO PARA EL FRONTEND
+    // Convertimos las llaves del JSON de Redelex a lo que espera tu tabla Angular
+    const procesosMapeados = misProcesos.map((item) => ({
+      procesoId: item['ID Proceso'],
+      claseProceso: String(item['Clase Proceso'] ?? '').trim(),
+      
+      // Limpiamos la comilla simple del radicado ('68001...)
+      numeroRadicacion: String(item['Numero Radicacion'] ?? '').replace(/'/g, '').trim(),
+      
+      demandadoNombre: String(item['Demandado - Nombre'] ?? '').trim(),
+      demandadoIdentificacion: String(item['Demandado - Identificacion'] ?? '').trim(),
+      
+      demandanteNombre: String(item['Demandante - Nombre'] ?? '').trim(),
+      demandanteIdentificacion: String(item['Demandante - Identificacion'] ?? '').trim(),
+      fechaRecepcionProceso: String(item['Fecha Recepcion Proceso'] ?? '').trim(),
+      sentencia: String(item['Sentencia'] ?? '').trim(),
+      despacho: String(item['Despacho'] ?? '').trim(),
+      etapaProcesal: String(item['Etapa Procesal'] ?? '').trim(),
+      sentenciaPrimeraInstancia: String(item['Sentencia'] ?? '').trim(),
+      ciudadInmueble: String(item['Ciudad'] ?? '').trim(),
+    }));
+
+    return {
+      success: true,
+      identificacion: userNit,
+      procesos: procesosMapeados
+    };
   }
 
   async getValidAuthToken(): Promise<string> {
@@ -183,7 +239,7 @@ export class RedelexService {
       numeroRadicacion: item['Numero Radicacion']
         ? String(item['Numero Radicacion']).replace(/'/g, '')
         : '',
-      ciudadInmueble: item['CIUDAD DEL INMUEBLE'],
+      ciudadInmueble: item['Ciudad'],
     }));
   }
 

@@ -1,5 +1,14 @@
-import { Controller, Post, Get, Body, HttpCode, HttpStatus, Res, Req, UseGuards } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+import { 
+  Controller, 
+  Post, 
+  Get, 
+  Body, 
+  HttpCode, 
+  HttpStatus, 
+  Res, 
+  Req, 
+  UseGuards // <--- Importante
+} from '@nestjs/common';
 import { Response } from 'express';
 import { AuthService } from '../services/auth.service';
 import {
@@ -8,10 +17,16 @@ import {
   RequestPasswordResetDto,
   ResetPasswordDto,
 } from '../dto/auth.dto';
+// 1. IMPORTAMOS TU NUEVO GUARD HÍBRIDO
+import { SystemOrJwtGuard } from '../../../common/guards/system-or-jwt.guard';
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  // ============================================================
+  // ENDPOINTS PÚBLICOS (NO LLEVAN GUARD)
+  // ============================================================
 
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
@@ -24,23 +39,13 @@ export class AuthController {
   async login(@Body() loginDto: LoginDto, @Res({ passthrough: true }) response: Response) {
     const loginResult = await this.authService.login(loginDto);
     
-    // --- LÓGICA INTELIGENTE (PROD vs DEV) ---
-    // Detectamos si estamos en Azure o en Localhost
     const isProduction = process.env.NODE_ENV === 'production';
 
     response.cookie('redelex_token', loginResult.token, {
       httpOnly: true, 
-      
-      // En producción (HTTPS) es true, en local (HTTP) es false
       secure: isProduction,   
-      
-      // 'none' requiere secure=true. En local usamos 'lax' para que no falle.
       sameSite: isProduction ? 'none' : 'lax', 
-      
-      // En local NO ponemos dominio (usa localhost). En prod forzamos affi.net
       domain: isProduction ? 'affi.net' : undefined, 
-      
-      // CORREGIDO: 30 Minutos reales
       maxAge: 1000 * 60 * 30, 
     });
 
@@ -53,7 +58,6 @@ export class AuthController {
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   async logout(@Res({ passthrough: true }) response: Response) {
-    // Usamos la misma lógica para poder borrar la cookie correctamente
     const isProduction = process.env.NODE_ENV === 'production';
 
     response.cookie('redelex_token', '', {
@@ -84,9 +88,19 @@ export class AuthController {
     return this.authService.resetPassword(resetDto);
   }
 
-  @UseGuards(AuthGuard('jwt'))
+  // ============================================================
+  // ENDPOINTS PROTEGIDOS (AQUÍ APLICAMOS EL GUARD)
+  // ============================================================
+
+  /**
+   * Este endpoint ahora responderá si:
+   * 1. Viene un usuario normal con Cookie/JWT.
+   * 2. Viene el SYSTEM_TASK_TOKEN en el header Authorization.
+   */
+  @UseGuards(SystemOrJwtGuard)
   @Get('profile')
   getProfile(@Req() req) {
+    // Si entras con System Token, recuerda que req.user será el usuario "falso" Admin
     return req.user; 
   }
 }
