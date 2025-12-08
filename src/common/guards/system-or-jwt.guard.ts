@@ -17,13 +17,14 @@ export class SystemOrJwtGuard extends AuthGuard('jwt') {
 
     // 2. LOGICA DE BYPASS: Si es la llave maestra, inyectamos un ADMIN FALSO
     if (authHeader && systemToken && authHeader === systemToken) {
-      // Al poner role: 'admin', tu RolesGuard y tu Controller dejarán pasar sin pedir NIT
+      // Al poner role: 'admin', tu RolesGuard dejará pasar.
       request.user = { 
         id: 'system', 
         name: 'System Task',
-        nameInmo: 'System-Inmobiliaria',
-        role: 'admin', 
-        nit: '800000000-System' 
+        nombreInmobiliaria: 'System-Inmobiliaria',
+        role: 'admin', // O usa ValidRoles.ADMIN
+        nit: '800000000-System',
+        permissions: [] // <--- AGREGADO: Para mantener consistencia con la interfaz de User
       };
       return true; 
     }

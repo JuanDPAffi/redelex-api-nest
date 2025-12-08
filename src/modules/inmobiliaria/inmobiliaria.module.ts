@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { Inmobiliaria, InmobiliariaSchema } from '../auth/schemas/inmobiliaria.schema';
+import { InmobiliariaController } from './controllers/inmobiliaria.controller'; // <--- Agregado
+import { InmobiliariaService } from './services/inmobiliaria.service';       // <--- Agregado
+import { Inmobiliaria, InmobiliariaSchema } from './schema/inmobiliaria.schema';
 
 @Module({
   imports: [
@@ -8,6 +10,8 @@ import { Inmobiliaria, InmobiliariaSchema } from '../auth/schemas/inmobiliaria.s
       { name: Inmobiliaria.name, schema: InmobiliariaSchema },
     ]),
   ],
-  exports: [MongooseModule], // ¡Importante exportarlo para que Auth lo pueda usar!
+  controllers: [InmobiliariaController], // <--- Agregado
+  providers: [InmobiliariaService],      // <--- Agregado
+  exports: [MongooseModule, InmobiliariaService], // Exportamos Service por si acaso
 })
 export class InmobiliariaModule {}

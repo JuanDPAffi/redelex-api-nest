@@ -10,7 +10,10 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
-import { User, UserDocument } from '../schemas/user.schema';
+// Importamos ValidRoles y la constante de permisos por defecto
+import { User, UserDocument, ValidRoles } from '../schemas/user.schema';
+import { DEFAULT_ROLE_PERMISSIONS } from '../../../common/constants/permissions.constant'; // <--- IMPORTANTE
+
 import {
   PasswordResetToken,
   PasswordResetTokenDocument,
@@ -22,7 +25,7 @@ import {
   RequestPasswordResetDto,
   ResetPasswordDto,
 } from '../dto/auth.dto';
-import { Inmobiliaria, InmobiliariaDocument } from '../../auth/schemas/inmobiliaria.schema';
+import { Inmobiliaria, InmobiliariaDocument } from '../../inmobiliaria/schema/inmobiliaria.schema';
 
 @Injectable()
 export class AuthService {
@@ -30,7 +33,6 @@ export class AuthService {
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
     
-    // 2. INYECTAR EL MODELO DE INMOBILIARIA
     @InjectModel(Inmobiliaria.name)
     private readonly inmobiliariaModel: Model<InmobiliariaDocument>,
 
@@ -46,6 +48,8 @@ export class AuthService {
       id: user._id.toString(),
       email: user.email,
       role: user.role,
+      // No incluimos permissions en el token para mantenerlo ligero.
+      // La estrategia JWT (jwt.strategy.ts) los consultará de la BD.
     };
     return this.jwtService.sign(payload);
   }
@@ -77,49 +81,38 @@ export class AuthService {
       throw new UnauthorizedException('Esta inmobiliaria se encuentra inactiva');
     }
 
-    // Normalizamos el email para las comparaciones
+    // Normalizamos el email
     const emailLower = email.toLowerCase();
     const isAffiEmail = emailLower.endsWith('@affi.net');
-
-    // Identificamos si están intentando registrarse en la EMPRESA DUEÑA (AFFI)
-    // Usamos los datos exactos que me diste
     const isAffiCorporate = (nit === '900053370' && codigoInmobiliaria === 'AFFI');
 
     // REGLA 1: PROTECCIÓN CORPORATIVA
-    // Si intentan usar credenciales de AFFI, PERO el correo NO es @affi.net -> BLOQUEAR
     if (isAffiCorporate && !isAffiEmail) {
       throw new UnauthorizedException('Restringido: El código AFFI solo puede ser usado por correos corporativos @affi.net');
     }
 
     // REGLA 2: ASIGNACIÓN DE PROPIEDAD
-    if (isAffiCorporate) {
-      // CASO AFFI:
-      // No guardamos "emailRegistrado" porque Affi permite múltiples usuarios internos.
-      // Simplemente dejamos pasar (ya validamos arriba que sea @affi.net).
-    } else {
-      // CASO CLIENTE EXTERNO:
-      // Validamos unicidad (un solo dueño por inmobiliaria)
-      
-      // Si ya tiene dueño...
+    if (!isAffiCorporate) {
       if (inmobiliaria.emailRegistrado) {
-        // ...y es diferente al que intenta registrarse -> ERROR
         if (inmobiliaria.emailRegistrado !== emailLower) {
            throw new ConflictException('Esta inmobiliaria ya tiene un usuario administrador registrado.');
         }
       } else {
-        // Si está libre, la asignamos a este usuario
         inmobiliaria.emailRegistrado = emailLower;
         await inmobiliaria.save();
       }
     }
 
-    // ---------------------------------------------------------
-
-    // 4. Hash password
+    // 4. Hash password y Token
     const hashedPassword = await bcrypt.hash(password, 10);
     const activationToken = crypto.randomBytes(32).toString('hex');
 
-    const assignedRole = isAffiEmail ? 'admin' : 'user';
+    // --- LOGICA DE ROLES ---
+    const assignedRole = isAffiEmail ? ValidRoles.AFFI : ValidRoles.INMOBILIARIA;
+
+    // --- NUEVO: ASIGNACIÓN DE PERMISOS POR DEFECTO ---
+    // Buscamos en el mapa qué permisos le tocan a este rol
+    const defaultPermissions = DEFAULT_ROLE_PERMISSIONS[assignedRole] || [];
 
     // 5. Crear usuario
     const user = await this.userModel.create({
@@ -127,12 +120,13 @@ export class AuthService {
       email: emailLower,
       password: hashedPassword,
       role: assignedRole,
-      nameInmo: inmobiliaria.nombreInmobiliaria,
       nit, 
       codigoInmobiliaria,
+      nombreInmobiliaria: inmobiliaria.nombreInmobiliaria,
       activationToken: activationToken, 
       isVerified: false, 
       isActive: true, 
+      permissions: defaultPermissions
     });
 
     const frontBase = this.configService.get<string>('FRONT_BASE_URL') || 'http://localhost:4200';
@@ -148,7 +142,6 @@ export class AuthService {
   async login(loginDto: LoginDto) {
     const { email, password } = loginDto;
 
-    // Buscamos al usuario (incluyendo password para comparar)
     const user = await this.userModel.findOne({
       email: email.toLowerCase(),
     }).select('+password');
@@ -157,7 +150,7 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
-    // 1. Validaciones previas
+    // Validaciones de estado
     if (!user.isVerified) {
       throw new UnauthorizedException('Debes activar tu cuenta. Revisa tu correo electrónico.');
     }
@@ -166,41 +159,27 @@ export class AuthService {
       throw new UnauthorizedException('Su cuenta ha sido desactivada. Contacte al administrador.');
     }
 
-    // 2. Verificar Contraseña
+    // Verificar Contraseña
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
-      // --- LÓGICA DE INTENTOS FALLIDOS ---
-      
-      // Incrementamos el contador (si no existe, empieza en 0)
       const currentAttempts = (user.loginAttempts || 0) + 1;
       const maxAttempts = 3;
       const remaining = maxAttempts - currentAttempts;
 
-      // Actualizamos el contador en la BD
       user.loginAttempts = currentAttempts;
       
       if (currentAttempts >= maxAttempts) {
-        // BLOQUEO DE CUENTA
-        user.isActive = false; // Inactivamos al usuario
+        user.isActive = false;
         await user.save();
-        
-        throw new UnauthorizedException(
-          'Su cuenta ha sido desactivada por múltiples intentos fallidos. Para reactivarla, restablezca su contraseña.'
-        );
+        throw new UnauthorizedException('Su cuenta ha sido desactivada por múltiples intentos fallidos.');
       } else {
-        // ADVERTENCIA
         await user.save();
-        
-        throw new UnauthorizedException(
-          `Credenciales inválidas. Advertencia: Le quedan ${remaining} intento(s) antes de bloquear su cuenta.`
-        );
+        throw new UnauthorizedException(`Credenciales inválidas. Le quedan ${remaining} intento(s).`);
       }
     }
 
-    // --- SI LLEGA AQUÍ, EL LOGIN FUE EXITOSO ---
-
-    // Reiniciamos el contador de intentos a 0
+    // Login Exitoso
     if (user.loginAttempts > 0) {
       user.loginAttempts = 0;
       await user.save();
@@ -215,6 +194,7 @@ export class AuthService {
         name: user.name,
         email: user.email,
         role: user.role,
+        permissions: user.permissions || [] // Enviamos permisos al front
       },
       token,
     };
@@ -225,106 +205,57 @@ export class AuthService {
       email: email.toLowerCase() 
     }).select('+activationToken');
 
-    if (!user) {
-      throw new BadRequestException('Usuario no encontrado');
-    }
-
-    if (user.isVerified) {
-      return { message: 'La cuenta ya estaba verificada. Puedes iniciar sesión.' };
-    }
-
-    if (user.activationToken !== token) {
-      throw new BadRequestException('Token de activación inválido o expirado');
-    }
+    if (!user) throw new BadRequestException('Usuario no encontrado');
+    if (user.isVerified) return { message: 'La cuenta ya estaba verificada.' };
+    if (user.activationToken !== token) throw new BadRequestException('Token inválido');
 
     user.isVerified = true;
     user.activationToken = undefined; 
     await user.save();
 
-    return {
-      message: 'Cuenta activada correctamente. Ya puedes iniciar sesión.',
-    };
+    return { message: 'Cuenta activada correctamente.' };
   }
   
   async requestPasswordReset(requestDto: RequestPasswordResetDto) {
     const { email } = requestDto;
+    const user = await this.userModel.findOne({ email: email.toLowerCase() });
 
-    const user = await this.userModel.findOne({
-      email: email.toLowerCase(),
-    });
-
-    if (!user) {
-      return {
-        message:
-          'Si el correo está registrado, te enviaremos un enlace para restablecer la contraseña.',
-      };
-    }
+    if (!user) return { message: 'Si el correo existe, se enviará el enlace.' };
 
     const rawToken = crypto.randomBytes(32).toString('hex');
-    const tokenHash = crypto
-      .createHash('sha256')
-      .update(rawToken)
-      .digest('hex');
-
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); 
 
     await this.passwordResetTokenModel.deleteMany({ userId: user._id });
+    await this.passwordResetTokenModel.create({ userId: user._id, tokenHash, expiresAt });
 
-    await this.passwordResetTokenModel.create({
-      userId: user._id,
-      tokenHash,
-      expiresAt,
-    });
-
-    const frontBase =
-      this.configService.get<string>('FRONT_BASE_URL') ||
-      'http://localhost:4200';
-    const resetLink = `${frontBase}/auth/reset-password?token=${rawToken}&email=${encodeURIComponent(
-      user.email,
-    )}`;
+    const frontBase = this.configService.get<string>('FRONT_BASE_URL') || 'http://localhost:4200';
+    const resetLink = `${frontBase}/auth/reset-password?token=${rawToken}&email=${encodeURIComponent(user.email)}`;
 
     this.mailService.sendPasswordResetEmail(user.email, user.name, resetLink);
-
-    return {
-      message:
-        'Si el correo está registrado, te enviaremos un enlace para restablecer la contraseña.',
-    };
+    return { message: 'Si el correo existe, se enviará el enlace.' };
   }
 
   async resetPassword(resetDto: ResetPasswordDto) {
     const { email, token, password } = resetDto;
-
-    const user = await this.userModel.findOne({
-      email: email.toLowerCase(),
-    });
-
-    if (!user) {
-      throw new BadRequestException('Enlace inválido o expirado');
-    }
+    const user = await this.userModel.findOne({ email: email.toLowerCase() });
+    if (!user) throw new BadRequestException('Enlace inválido');
 
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-
     const tokenDoc = await this.passwordResetTokenModel.findOne({
       userId: user._id,
       tokenHash,
       expiresAt: { $gt: new Date() },
     });
 
-    if (!tokenDoc) {
-      throw new BadRequestException('Enlace inválido o expirado');
-    }
+    if (!tokenDoc) throw new BadRequestException('Enlace inválido o expirado');
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-    user.password = hashedPassword;
+    user.password = await bcrypt.hash(password, 10);
     user.loginAttempts = 0;
     user.isActive = true;
     await user.save();
-
     await this.passwordResetTokenModel.deleteMany({ userId: user._id });
 
-    return {
-      message:
-        'Contraseña actualizada correctamente. Ya puedes iniciar sesión.',
-    };
+    return { message: 'Contraseña actualizada correctamente.' };
   }
 }

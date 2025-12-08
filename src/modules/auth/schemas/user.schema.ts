@@ -3,6 +3,13 @@ import { Document } from 'mongoose';
 
 export type UserDocument = User & Document;
 
+// Definimos los roles validos para evitar errores de tipeo
+export enum ValidRoles {
+  ADMIN = 'admin',
+  AFFI = 'affi',
+  INMOBILIARIA = 'inmobiliaria',
+}
+
 @Schema({ timestamps: true })
 export class User {
   @Prop({ required: true, trim: true })
@@ -21,28 +28,30 @@ export class User {
 
   @Prop({ 
     required: true, 
-    default: 'user', 
-    enum: ['user', 'admin'] 
+    default: ValidRoles.INMOBILIARIA, 
+    enum: ValidRoles 
   })
   role: string;
+
+  // NUEVO: Array de permisos granulares para personalización
+  // Esto permite que un 'affi' tenga permisos extra que otros 'affi' no tienen
+  @Prop({ type: [String], default: [] })
+  permissions: string[];
 
   // Control de acceso
   @Prop({ default: true })
   isActive: boolean;
 
-  // AGREGA ESTE NUEVO CAMPO
   @Prop({ default: 0 })
   loginAttempts: number;
 
-  // Verificación de correo
   @Prop({ default: false })
   isVerified: boolean;
 
-  // Agrega este campo a tu clase User
-  @Prop({ select: false }) // Oculto por seguridad
+  @Prop({ select: false })
   activationToken?: string;
 
-  // NUEVOS: Datos de empresa 
+  // Datos de empresa 
   @Prop({ required: false, trim: true})
   nombreInmobiliaria?: string;
 
