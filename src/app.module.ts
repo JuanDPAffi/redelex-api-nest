@@ -6,6 +6,7 @@ import { RedelexModule } from './modules/redelex/redelex.module';
 import { MailModule } from './modules/mail/mail.module';
 import { InmobiliariaModule } from './modules/inmobiliaria/inmobiliaria.module'; // <--- AGREGAR ESTO
 import { UsersModule } from './modules/users/users.module';
+import { SupportModule } from './modules/support/support.module'; // <--- AGREGAR ESTO
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { UsersModule } from './modules/users/users.module';
     MailModule,
     InmobiliariaModule,
     UsersModule,
+    SupportModule,
   ],
   controllers: [],
   providers: [],
