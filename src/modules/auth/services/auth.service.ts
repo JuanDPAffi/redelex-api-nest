@@ -156,7 +156,7 @@ export class AuthService {
     }
 
     if (!user.isActive) {
-      throw new UnauthorizedException('Su cuenta ha sido desactivada. Contacte al administrador.');
+      throw new UnauthorizedException('Hemos desactivado tu cuenta por seguridad. Restablece tu contraseña para habilitarla nuevamente.');
     }
 
     // Verificar Contraseña
