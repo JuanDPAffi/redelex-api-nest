@@ -370,6 +370,7 @@ export class RedelexService {
       tipoBien: medida.TipoBien ?? null,
       sujeto: medida.Sujeto ?? null,
       tipoMedida: medida.TipoMedida ?? null,
+      descripcion: medida.Descripcion ?? null,
       medidaEfectiva: medida.MedidaEfectiva ?? null,
       avaluoJudicial: medida.AvaluoJudicial ?? null,
       observaciones: medida.Observaciones ?? null,

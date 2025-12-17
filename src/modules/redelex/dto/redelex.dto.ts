@@ -20,6 +20,7 @@ export interface MedidaCautelarDto {
   fecha: string | null;
   tipoMedida: string | null;
   medidaEfectiva: string | null;
+  descripcion: string | null;
   sujeto: string | null;
   tipoBien: string | null;
   identificacionSujeto: string | null;
