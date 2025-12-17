@@ -10,9 +10,8 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
-// Importamos ValidRoles y la constante de permisos por defecto
 import { User, UserDocument, ValidRoles } from '../schemas/user.schema';
-import { DEFAULT_ROLE_PERMISSIONS } from '../../../common/constants/permissions.constant'; // <--- IMPORTANTE
+import { DEFAULT_ROLE_PERMISSIONS } from '../../../common/constants/permissions.constant';
 
 import {
   PasswordResetToken,
@@ -48,8 +47,6 @@ export class AuthService {
       id: user._id.toString(),
       email: user.email,
       role: user.role,
-      // No incluimos permissions en el token para mantenerlo ligero.
-      // La estrategia JWT (jwt.strategy.ts) los consultará de la BD.
     };
     return this.jwtService.sign(payload);
   }
@@ -115,8 +112,7 @@ export class AuthService {
       .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
       .join(' ');
 
-    // --- NUEVO: ASIGNACIÓN DE PERMISOS POR DEFECTO ---
-    // Buscamos en el mapa qué permisos le tocan a este rol
+    // --- ASIGNACIÓN DE PERMISOS POR DEFECTO ---
     const defaultPermissions = DEFAULT_ROLE_PERMISSIONS[assignedRole] || [];
 
     // 5. Crear usuario
@@ -160,9 +156,26 @@ export class AuthService {
       throw new UnauthorizedException('Debes activar tu cuenta. Revisa tu correo electrónico.');
     }
 
+    // --- INICIO CORRECCIÓN LOGIN ---
     if (!user.isActive) {
-      throw new UnauthorizedException('Hemos desactivado tu cuenta por seguridad. Restablece tu contraseña para habilitarla nuevamente.');
+      // 1. Verificamos si es por culpa de la Inmobiliaria
+      if (user.nit) {
+        const inmobiliaria = await this.inmobiliariaModel.findOne({ nit: user.nit });
+        
+        // Si la inmobiliaria existe y está inactiva, bloqueamos con mensaje específico
+        if (inmobiliaria && !inmobiliaria.isActive) {
+          throw new UnauthorizedException(
+            'Acceso denegado: La inmobiliaria asociada a esta cuenta se encuentra inactiva. Contacte al administrador.'
+          );
+        }
+      }
+
+      // 2. Si la inmobiliaria está bien (o no tiene), entonces SÍ es bloqueo por intentos
+      throw new UnauthorizedException(
+        'Hemos desactivado tu cuenta por seguridad (múltiples intentos fallidos). Restablece tu contraseña para habilitarla nuevamente.'
+      );
     }
+    // --- FIN CORRECCIÓN LOGIN ---
 
     // Verificar Contraseña
     const isMatch = await bcrypt.compare(password, user.password);
@@ -199,7 +212,7 @@ export class AuthService {
         name: user.name,
         email: user.email,
         role: user.role,
-        permissions: user.permissions || [] // Enviamos permisos al front
+        permissions: user.permissions || []
       },
       token,
     };
@@ -256,10 +269,29 @@ export class AuthService {
     if (!tokenDoc) throw new BadRequestException('Enlace inválido o expirado');
 
     user.password = await bcrypt.hash(password, 10);
-    user.loginAttempts = 0;
-    user.isActive = true;
+    user.loginAttempts = 0; 
+
+    // --- INICIO CORRECCIÓN RESET PASSWORD ---
+    let shouldActivate = true;
+
+    if (user.nit) {
+      const inmobiliaria = await this.inmobiliariaModel.findOne({ nit: user.nit });
+      
+      // Si la inmobiliaria existe y está inactiva, mantenemos al usuario inactivo
+      if (inmobiliaria && !inmobiliaria.isActive) {
+        shouldActivate = false;
+      }
+    }
+
+    user.isActive = shouldActivate;
+    // --- FIN CORRECCIÓN RESET PASSWORD ---
+
     await user.save();
     await this.passwordResetTokenModel.deleteMany({ userId: user._id });
+
+    if (!shouldActivate) {
+      return { message: 'Contraseña actualizada. Nota: Su acceso sigue restringido porque la inmobiliaria se encuentra inactiva.' };
+    }
 
     return { message: 'Contraseña actualizada correctamente.' };
   }
