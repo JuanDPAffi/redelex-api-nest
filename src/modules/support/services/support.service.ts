@@ -30,10 +30,9 @@ export class SupportService {
       'Content-Type': 'application/json',
     };
 
-    // 1. BUSCAR CONTACTO (Siempre)
+    // 1. BUSCAR CONTACTO Y EMPRESA (Lógica existente)
     const contactId = await this.findContactId(user.email, headers);
 
-    // 2. BUSCAR EMPRESA (Solo si NO es Affi y tiene NIT)
     let companyId = null;
     const isAffi = user.role?.toLowerCase() === 'affi' || user.nit === '900053370';
     
@@ -41,18 +40,14 @@ export class SupportService {
       companyId = await this.findCompanyId(user.nit, user.email, headers);
     }
 
-    // 3. PREPARAR ASOCIACIONES
+    // 2. PREPARAR ASOCIACIONES
     const associations = [];
-
-    // Asociación con Contacto (Tipo 16)
     if (contactId) {
       associations.push({
         to: { id: contactId },
         types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 16 }]
       });
     }
-
-    // Asociación con Empresa (Tipo 26)
     if (companyId) {
       associations.push({
         to: { id: companyId },
@@ -60,23 +55,66 @@ export class SupportService {
       });
     }
 
-    // 4. CREAR TICKET
-    const enrichedContent = `
-      Usuario: ${user.name}
-      Email: ${user.email}
-      Rol: ${user.role || 'N/A'}
-      NIT: ${user.nit || 'N/A'}
-      ---------------------------
-      ${dto.content}
+    // 3. CONSTRUIR CONTENIDO INTELIGENTE (Nueva Lógica)
+    let headerInfo = '';
+    
+    // CASO A: TICKET DE PROCESO (Viene con metadata)
+    if (dto.metadata) {
+      // Prefijo automático si no lo trae
+      if (!dto.subject.startsWith('[APOYO JURÍDICO]')) {
+        dto.subject = `[APOYO JURÍDICO] ${dto.subject}`;
+      }
+
+      headerInfo = `
+================================
+SOLICITUD DE APOYO JURÍDICO
+================================
+ID Proceso: ${dto.metadata.procesoId || 'N/A'}
+Radicado: ${dto.metadata.radicado || 'N/A'}
+Cuenta: ${dto.metadata.cuenta || 'N/A'}
+Clase: ${dto.metadata.clase || 'N/A'}
+Etapa Actual: ${dto.metadata.etapa || 'N/A'}
+      `;
+    } 
+    // CASO B: TICKET DE SOPORTE TÉCNICO (Sin metadata)
+    else {
+      if (!dto.subject.startsWith('[SOPORTE]')) {
+        dto.subject = `[SOPORTE] ${dto.subject}`;
+      }
+      
+      headerInfo = `
+================================
+SOPORTE TÉCNICO - PLATAFORMA
+================================
+      `;
+    }
+
+    // Información del Usuario (Común para ambos)
+    const userInfo = `
+Usuario: ${user.name}
+Email: ${user.email}
+Rol: ${user.role || 'N/A'}
+NIT: ${user.nit || 'N/A'}
+--------------------------------
     `;
 
+    // Ensamblar cuerpo final
+    const finalContent = `
+${headerInfo}
+${userInfo}
+
+MENSAJE DEL USUARIO:
+${dto.content}
+    `.trim();
+
+    // 4. CREAR TICKET EN HUBSPOT
     const ticketData = {
       properties: {
         hs_pipeline: '0',
         hs_pipeline_stage: '1',
         hs_ticket_priority: 'HIGH',
         subject: dto.subject,
-        content: enrichedContent,
+        content: finalContent, // Enviamos el contenido formateado
       },
       associations: associations.length > 0 ? associations : undefined
     };
@@ -90,54 +128,38 @@ export class SupportService {
     }
   }
 
-  // --- MÉTODOS DE BÚSQUEDA ---
+  // --- MÉTODOS DE BÚSQUEDA (Sin cambios) ---
 
   private async findContactId(email: string, headers: any): Promise<string | null> {
     const searchPayload = {
-      filterGroups: [
-        {
-          filters: [{ propertyName: 'email', operator: 'EQ', value: email }]
-        }
-      ],
-      properties: ['email', 'firstname'],
+      filterGroups: [{ filters: [{ propertyName: 'email', operator: 'EQ', value: email }] }],
+      properties: ['email'],
       limit: 1
     };
-
     try {
       const response = await axios.post(`${this.hubspotBaseUrl}/contacts/search`, searchPayload, { headers });
-      if (response.data.total > 0) {
-        return response.data.results[0].id;
-      }
+      return response.data.total > 0 ? response.data.results[0].id : null;
     } catch (error) {
-      this.logger.warn(`No se pudo buscar el contacto: ${email}`, error.message);
+      this.logger.warn(`No se pudo buscar contacto: ${email}`);
+      return null;
     }
-    return null;
   }
 
   private async findCompanyId(nit: string, email: string, headers: any): Promise<string | null> {
-    // Usamos el JSON guía que proporcionaste
     const searchPayload = {
       filterGroups: [
-        {
-          filters: [{ propertyName: 'numero_de_identificacion', operator: 'EQ', value: nit }]
-        },
-        // Opcional: Buscar también por correo de la empresa si el NIT falla (OR logic)
-        {
-           filters: [{ propertyName: 'correo', operator: 'EQ', value: email }]
-        }
+        { filters: [{ propertyName: 'numero_de_identificacion', operator: 'EQ', value: nit }] },
+        { filters: [{ propertyName: 'correo', operator: 'EQ', value: email }] }
       ],
-      properties: ['name', 'numero_de_identificacion'],
+      properties: ['numero_de_identificacion'],
       limit: 1
     };
-
     try {
       const response = await axios.post(`${this.hubspotBaseUrl}/companies/search`, searchPayload, { headers });
-      if (response.data.total > 0) {
-        return response.data.results[0].id;
-      }
+      return response.data.total > 0 ? response.data.results[0].id : null;
     } catch (error) {
-      this.logger.warn(`No se pudo buscar la empresa con NIT: ${nit}`, error.message);
+      this.logger.warn(`No se pudo buscar empresa NIT: ${nit}`);
+      return null;
     }
-    return null;
   }
 }
