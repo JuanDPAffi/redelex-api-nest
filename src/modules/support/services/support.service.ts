@@ -1,7 +1,8 @@
-import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import axios from 'axios';
 import { ConfigService } from '@nestjs/config';
 import { CreateTicketDto } from '../dto/create-ticket.dto';
+import { CreateCallTicketDto } from '../dto/call-ticket.dto';
 
 interface UserContext {
   email: string;
@@ -15,8 +16,169 @@ export class SupportService {
   private readonly logger = new Logger(SupportService.name);
   private readonly hubspotBaseUrl = 'https://api.hubapi.com/crm/v3/objects';
 
+  private readonly DEFAULT_OWNER_ID = '81381349';
+
   constructor(private configService: ConfigService) {}
 
+  private getHeaders() {
+    const token = this.configService.get<string>('HUBSPOT_ACCESS_TOKEN');
+    if (!token) throw new InternalServerErrorException('HUBSPOT_ACCESS_TOKEN no configurado');
+    return {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    };
+  }
+
+  // --- 1. BÚSQUEDA PARA AUTOCOMPLETADO (Front) ---
+
+  async searchHubSpotCompany(nit: string) {
+    const searchPayload = {
+      filterGroups: [{ filters: [{ propertyName: 'numero_de_identificacion', operator: 'EQ', value: nit }] }],
+      properties: [
+        'name', 
+        'numero_de_identificacion', 
+        'hubspot_owner_id'
+      ],
+      limit: 1
+    };
+
+    try {
+      // 1. Buscar la empresa
+      const response = await axios.post(`${this.hubspotBaseUrl}/companies/search`, searchPayload, { headers: this.getHeaders() });
+      
+      if (response.data.total > 0) {
+        const company = response.data.results[0];
+        const ownerId = company.properties.hubspot_owner_id;
+        let ownerName = '';
+
+        // 2. Si tiene owner, buscamos su nombre (NUEVO)
+        if (ownerId) {
+          try {
+            // Nota: La API de Owners es diferente a la de Objects, usamos la URL raíz de CRM
+            const ownerUrl = 'https://api.hubapi.com/crm/v3/owners'; 
+            const ownerResp = await axios.get(`${ownerUrl}/${ownerId}`, { headers: this.getHeaders() });
+            const { firstName, lastName } = ownerResp.data;
+            ownerName = `${firstName || ''} ${lastName || ''}`.trim();
+          } catch (error) {
+            this.logger.warn(`No se pudo resolver el nombre del owner ${ownerId}`);
+            ownerName = 'No identificado';
+          }
+        }
+
+        return { 
+          found: true, 
+          id: company.id, 
+          name: company.properties.name, 
+          nit: company.properties.numero_de_identificacion,
+          // Devolvemos ambos datos:
+          ownerId: ownerId,      // El ID (para crear el ticket luego)
+          ownerName: ownerName   // El Nombre (para mostrar en el front)
+        };
+      }
+      return { found: false };
+    } catch (error) {
+      this.logger.error(`Error buscando empresa HS: ${nit}`, error);
+      return { found: false };
+    }
+  }
+
+  async searchHubSpotContact(email: string) {
+    const searchPayload = {
+      filterGroups: [{ filters: [{ propertyName: 'email', operator: 'EQ', value: email }] }],
+      properties: ['firstname', 'lastname', 'email', 'phone'],
+      limit: 1
+    };
+    try {
+      const response = await axios.post(`${this.hubspotBaseUrl}/contacts/search`, searchPayload, { headers: this.getHeaders() });
+      if (response.data.total > 0) {
+        const contact = response.data.results[0];
+        const fullName = `${contact.properties.firstname || ''} ${contact.properties.lastname || ''}`.trim();
+        return { 
+          found: true, 
+          id: contact.id, 
+          name: fullName, 
+          email: contact.properties.email, 
+          phone: contact.properties.phone
+        };
+      }
+      return { found: false };
+    } catch (error) {
+      this.logger.error(`Error buscando contacto HS: ${email}`, error);
+      return { found: false };
+    }
+  }
+
+  // --- 2. CREACIÓN DEL TICKET DE LLAMADA ---
+  async createCallTicket(dto: CreateCallTicketDto, userEmail: string) {
+    const headers = this.getHeaders(); // Usamos el helper para obtener headers
+
+    // 1. Resolver IDs
+    // Nota: findContactId y findCompanyId son métodos privados que tienes más abajo en tu archivo.
+    // Asegúrate de que estén definidos (en tu archivo original lo estaban).
+    const contactId = await this.findContactId(dto.contactEmail, headers);
+    
+    let companyId = null;
+    if (dto.companyNit) {
+       companyId = await this.findCompanyId(dto.companyNit, dto.contactEmail, headers);
+    }
+
+    // 2. Asociaciones
+    const associations = [];
+    if (contactId) {
+      associations.push({
+        to: { id: contactId },
+        types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 16 }]
+      });
+    }
+    if (companyId) {
+      associations.push({
+        to: { id: companyId },
+        types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 26 }]
+      });
+    }
+
+    const subject = `Llamada Estados Procesales - ${dto.contactName || 'Desconocido'}`;
+
+    // 3. Payload
+    const ticketData = {
+      properties: {
+        subject: subject,
+        tipo_de_solicitud: "Estados procesales",
+        hs_ticket_category: "Estados Procesales",
+        hubspot_owner_id: this.DEFAULT_OWNER_ID,
+        grupo_de_atencion: "Servicio al cliente",
+        tipo_de_llamada: dto.callType,
+        area_origen_transferencia: dto.transferArea || "",
+        consulta: dto.query,
+        identificacion_consultado: dto.inquilinoIdentificacion || "",
+        nombre_consultado: dto.inquilinoNombre || "",
+        numero_cuenta_consultado: dto.cuenta || "", 
+        hs_pipeline: "0",
+        hs_pipeline_stage: "2"
+      },
+      associations: associations
+    };
+
+    try {
+      const response = await axios.post(`${this.hubspotBaseUrl}/tickets`, ticketData, { headers });
+      return { 
+        success: true, 
+        ticketId: response.data.id, 
+        message: 'Ticket de llamada creado correctamente' 
+      };
+    } catch (error) {
+      // CAPTURAR EL ERROR REAL DE HUBSPOT
+      const hubspotError = error?.response?.data;
+      this.logger.error('Error creando ticket de llamada', hubspotError || error.message);
+      
+      // Lanzamos BadRequest con el mensaje específico de HubSpot para verlo en el Front
+      throw new BadRequestException(
+        hubspotError?.message || 'Error de validación en HubSpot (Revisa logs)'
+      );
+    }
+  }
+
+  // --- 3. CREACIÓN DEL TICKET DE SOPORTE TÉCNICO ---
   async createTicket(user: UserContext, dto: CreateTicketDto) {
     const token = this.configService.get<string>('HUBSPOT_ACCESS_TOKEN');
     
