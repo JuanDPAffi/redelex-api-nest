@@ -243,7 +243,6 @@ export class RedelexService {
     }));
   }
 
-  // OPTIMIZACIÓN 2: Procesamiento por Lotes (Batching)
   async syncInformeCedulaProceso(informeId: number) {
     if (!this.apiKey) throw new Error('REDELEX_API_KEY no configurado');
 
@@ -257,47 +256,66 @@ export class RedelexService {
     if (!raw) return { total: 0, upserted: 0, modified: 0, deleted: 0 };
 
     const items = JSON.parse(raw) as InformeCedulaItem[];
-    const total = items.length;
-    this.logger.log(`Informe descargado. Total registros a procesar: ${total}`);
+    this.logger.log(`Informe descargado. Registros crudos: ${items.length}`);
 
-    const procesosFromJson = new Set<number>();
+    // PASO 1: Agrupar en memoria por ID Proceso
+    const procesosMap = new Map<number, any>();
+
+    for (const item of items) {
+      const pId = Math.round(item['ID Proceso']);
+      const rol = String(item['Sujeto Intervencion'] ?? '').toUpperCase().trim();
+
+      // Si no existe en el mapa, lo inicializamos con datos generales
+      if (!procesosMap.has(pId)) {
+        procesosMap.set(pId, {
+          procesoId: pId,
+          numeroRadicacion: String(item['Numero Radicacion'] ?? '').replace(/'/g, '').trim(),
+          codigoAlterno: String(item['Codigo Alterno'] ?? '').trim(),
+          claseProceso: String(item['Clase Proceso'] ?? '').trim(),
+          etapaProcesal: String(item['Etapa Procesal'] ?? '').trim(),
+          // Inicializamos vacíos, se llenarán según el rol
+          demandadoNombre: '',
+          demandadoIdentificacion: '',
+          demandanteNombre: '',
+          demandanteIdentificacion: ''
+        });
+      }
+
+      // Obtenemos la referencia al objeto agrupado
+      const proceso = procesosMap.get(pId);
+
+      // PASO 2: Llenar datos según el rol del sujeto en esta fila
+      if (rol === 'DEMANDANTE') {
+        proceso.demandanteNombre = String(item['Sujeto Nombre'] ?? '').trim();
+        proceso.demandanteIdentificacion = String(item['Sujeto Identificacion'] ?? '').trim();
+      } 
+      else if (rol === 'DEMANDADO') {
+        proceso.demandadoNombre = String(item['Sujeto Nombre'] ?? '').trim();
+        proceso.demandadoIdentificacion = String(item['Sujeto Identificacion'] ?? '').trim();
+      }
+      // Nota: Si hay "DEUDOR SOLIDARIO", lo ignoramos o podrías asignarlo a demandado si prefieres.
+    }
+
+    // Convertimos el mapa a array para procesarlo
+    const procesosUnicos = Array.from(procesosMap.values());
+    const total = procesosUnicos.length;
+    this.logger.log(`Procesos únicos consolidados: ${total}`);
+
     let upserted = 0;
     let modified = 0;
-
-    // Tamaño del lote para no saturar la memoria ni la conexión a Mongo
     const BATCH_SIZE = 1000;
 
-    for (let i = 0; i < items.length; i += BATCH_SIZE) {
-      const chunk = items.slice(i, i + BATCH_SIZE);
-      const bulkOps = chunk.map((item) => {
-        const procesoId = Math.round(item['ID Proceso']);
-        procesosFromJson.add(procesoId);
-
-        return {
-          updateOne: {
-            filter: { procesoId },
-            update: {
-              $set: {
-                procesoId,
-                claseProceso: String(item['Clase Proceso'] ?? '').trim(),
-                demandadoNombre: String(
-                  item['Demandado - Nombre'] ?? '',
-                ).trim(),
-                demandadoIdentificacion: String(
-                  item['Demandado - Identificacion'] ?? '',
-                ).trim(),
-                demandanteNombre: String(
-                  item['Demandante - Nombre'] ?? '',
-                ).trim(),
-                demandanteIdentificacion: String(
-                  item['Demandante - Identificacion'] ?? '',
-                ).trim(),
-              },
-            },
-            upsert: true,
-          },
-        };
-      });
+    // PASO 3: Guardar en Mongo por lotes
+    for (let i = 0; i < total; i += BATCH_SIZE) {
+      const chunk = procesosUnicos.slice(i, i + BATCH_SIZE);
+      
+      const bulkOps = chunk.map((p) => ({
+        updateOne: {
+          filter: { procesoId: p.procesoId },
+          update: { $set: p }, // Guardamos el objeto ya consolidado
+          upsert: true,
+        },
+      }));
 
       if (bulkOps.length > 0) {
         const res = await this.cedulaProcesoModel.bulkWrite(bulkOps, {
@@ -308,21 +326,15 @@ export class RedelexService {
       }
     }
 
-    // OPTIMIZACIÓN DE BORRADO:
-    // Si el set es muy grande, $nin puede fallar.
-    // Nota: Si el informe trae SIEMPRE todos los procesos vigentes, esta lógica es correcta.
-    const idsProcesados = Array.from(procesosFromJson);
-    let deleted = 0;
-
-    // Si son muchísimos IDs, es mejor hacerlo en batch o con cuidado.
-    // Para < 50k registros, $nin suele aguantar, pero cuidado con > 100k.
+    // PASO 4: Limpieza (Opcional - Eliminar los que ya no vienen en el informe)
+    const idsProcesados = Array.from(procesosMap.keys());
     const deleteResult = await this.cedulaProcesoModel.deleteMany({
       procesoId: { $nin: idsProcesados },
     });
-    deleted = deleteResult.deletedCount ?? 0;
+    const deleted = deleteResult.deletedCount ?? 0;
 
     this.logger.log(
-      `Sync completada: ${total} procesados, ${upserted} insertados, ${modified} act., ${deleted} eliminados`,
+      `Sync completada: ${total} únicos, ${upserted} insertados, ${modified} act., ${deleted} eliminados`,
     );
 
     return { total, upserted, modified, deleted };
@@ -352,6 +364,9 @@ export class RedelexService {
       demandanteNombre: d.demandanteNombre || '',
       demandanteIdentificacion: d.demandanteIdentificacion || '',
       claseProceso: d.claseProceso || '',
+      etapaProcesal: d.etapaProcesal || '', 
+      numeroRadicacion: d.numeroRadicacion || '',
+      codigoAlterno: d.codigoAlterno || ''
     }));
 
     return {

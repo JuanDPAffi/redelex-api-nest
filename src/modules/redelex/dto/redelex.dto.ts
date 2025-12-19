@@ -8,6 +8,9 @@ export interface ProcesoResumenDto {
   demandanteNombre: string;
   demandanteIdentificacion: string;
   claseProceso: string;
+  etapaProcesal?: string;
+  numeroRadicacion?: string;
+  codigoAlterno?: string;
 }
 
 export interface ProcesosPorIdentificacionResponse {
@@ -71,10 +74,13 @@ export interface ProcesoDetalleDto {
 
 export type InformeCedulaItem = {
   'ID Proceso': number;
-  'Demandado - Nombre': string;
-  'Demandado - Identificacion': string;
-  'Demandante - Nombre': string;
-  'Demandante - Identificacion': string;
+  'Numero Radicacion': string;
+  'Codigo Alterno': string;
+  'Sujeto Nombre': string;
+  'Sujeto Identificacion': string;
+  'Sujeto Intervencion': string;
+  'Clase Proceso': string;
+  'Etapa Procesal': string;
 };
 
 // --- NUEVAS INTERFACES PARA INMOBILIAR ---

@@ -9,6 +9,17 @@ export class CedulaProceso {
   @Prop({ required: true, index: true })
   procesoId: number;
 
+  // --- Nuevos campos solicitados ---
+  @Prop()
+  numeroRadicacion: string;
+
+  @Prop()
+  codigoAlterno: string;
+
+  @Prop()
+  etapaProcesal: string;
+  // --------------------------------
+
   @Prop({ required: true })
   claseProceso: string;
 
@@ -29,5 +40,4 @@ export class CedulaProceso {
 }
 
 export const CedulaProcesoSchema = SchemaFactory.createForClass(CedulaProceso);
-
 CedulaProcesoSchema.index({ procesoId: 1 }, { unique: true });
