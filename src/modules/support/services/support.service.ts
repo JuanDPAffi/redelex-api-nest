@@ -273,10 +273,15 @@ ${dto.content}
     const ticketData = {
       properties: {
         hs_pipeline: '0',
+        tipo_de_solicitud: "Estados procesales",
+        hs_ticket_category: "Estados Procesales - Soporte",
+        grupo_de_atencion: "Servicio al cliente",
+        hubspot_owner_id: "81381349",
         hs_pipeline_stage: '1',
         hs_ticket_priority: 'HIGH',
+        plataforma_estados_procesales: 'true',
         subject: dto.subject,
-        content: finalContent, // Enviamos el contenido formateado
+        content: finalContent,
       },
       associations: associations.length > 0 ? associations : undefined
     };
