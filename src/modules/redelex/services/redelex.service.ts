@@ -425,20 +425,15 @@ export class RedelexService {
     
     const actuacionesRecientesList = actuaciones
       .filter((act: any) => {
-        // Normalizamos el texto para evitar errores de mayúsculas/espacios
         const nombreCuaderno = String(act.Cuaderno || '').toUpperCase().trim();
-        
-        // Verificamos que sea Principal
-        // Usamos INCLUDES por seguridad, por si llega "Cuaderno Principal" o "Principal."
         return nombreCuaderno.includes('PRINCIPAL');
       })
       .sort((a: any, b: any) => {
-        // Orden descendente (más nuevas primero)
         return new Date(b.FechaActuacion || 0).getTime() - new Date(a.FechaActuacion || 0).getTime();
       })
-      // TOMAMOS LAS 20 MÁS RECIENTES (en vez de filtrar por fecha)
-      .slice(0, 5) 
       .map((act: any) => ({
+        // Generamos un ID único desde el origen para evitar errores de tipado
+        id: act.ActuacionId ? String(act.ActuacionId) : `act-${Math.random().toString(36).substr(2, 9)}`, 
         fecha: act.FechaActuacion,
         observacion: act.Observacion,
         etapa: act.Etapa,
