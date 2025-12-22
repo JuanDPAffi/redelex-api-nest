@@ -188,5 +188,3 @@ Asegurar que el secreto `AZUREAPPSERVICE_PUBLISHPROFILE_...` esté configurado e
 <small>Desarrollado para Affi - Estados Procesales</small>
 </p>
 
-
-```
