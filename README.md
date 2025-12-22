@@ -1,9 +1,10 @@
 # 🏛️ Estados Procesales - Backend API
 
-![NestJS](https://img.shields.io/badge/nestjs-%23E0234E.svg?style=for-the-badge&logo=nestjs&logoColor=white)
-![TypeScript](https://img.shields.io/badge/typescript-%23007ACC.svg?style=for-the-badge&logo=typescript&logoColor=white)
-![MongoDB](https://img.shields.io/badge/MongoDB-%234ea94b.svg?style=for-the-badge&logo=mongodb&logoColor=white)
-![Azure](https://img.shields.io/badge/azure-%230072C6.svg?style=for-the-badge&logo=microsoftazure&logoColor=white)
+![Angular](https://img.shields.io/badge/angular-DD0031.svg?style=for-the-badge&logo=angular&logoColor=white)
+![NestJS](https://img.shields.io/badge/nestjs-E0234E.svg?style=for-the-badge&logo=nestjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/typescript-007ACC.svg?style=for-the-badge&logo=typescript&logoColor=white)
+![MongoDB](https://img.shields.io/badge/mongodb-4EA94B.svg?style=for-the-badge&logo=mongodb&logoColor=white)
+![Azure](https://img.shields.io/badge/azure-0078D4.svg?style=for-the-badge&logo=microsoft-azure&logoColor=white)
 
 Este repositorio contiene el código fuente del Backend para la plataforma **Estados Procesales**. Es una API RESTful desarrollada en **NestJS** que centraliza la operación jurídica entre **Affi** (Usuarios Internos), **Inmobiliarias** (Clientes Externos) y proveedores como **Redelex** y **HubSpot**.
 
