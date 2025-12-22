@@ -58,8 +58,7 @@ export class RedelexController {
     const user = req.user;
     
     // Verificamos permisos manualmente para aplicar lógica condicional
-    const canViewAll = user.role === ValidRoles.ADMIN || 
-                       (user.permissions && user.permissions.includes(PERMISSIONS.PROCESOS_VIEW_ALL));
+    const canViewAll = user.role === ValidRoles.ADMIN || (user.permissions && user.permissions.includes(PERMISSIONS.PROCESOS_VIEW_ALL));
     
     const canViewOwn = user.permissions && user.permissions.includes(PERMISSIONS.PROCESOS_VIEW_OWN);
 

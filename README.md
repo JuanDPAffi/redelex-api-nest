@@ -1,220 +1,123 @@
-# API Redelex - NestJS
 
-Migración del proyecto Node.js + Express a NestJS siguiendo la arquitectura técnica de Affi Latam.
+# 🏛️ Estados Procesales - Backend API
 
-## 🏗️ Arquitectura
+---
 
-El proyecto sigue una **arquitectura modular en capas** basada en plugins:
+## 🛠 Requisitos Previos
 
-- **Capa de APIs** (Controllers): Endpoints REST
-- **Capa de Servicios** (Services): Lógica de negocio
-- **Capa de Datos** (Schemas): Modelos de MongoDB con Mongoose
-- **Capa de Integración** (Adapters): Integración con servicios externos (MS Graph, Redelex)
+* **Node.js:** v22.x (Requerido para compatibilidad con Azure App Service).
+* **NPM:** Gestor de paquetes.
+* **MongoDB:** URI de conexión válida (Atlas o Local).
+* **Azure CLI:** (Opcional) Para gestión de despliegues manuales.
 
-## 📁 Estructura del Proyecto
+---
+
+## 🚀 Instalación y Ejecución
+
+1. **Clonar el repositorio:**
+   **Bash**
+
+   ```
+   git clone https://github.com/JuanDPAffi/redelex-api-nest.git
+   cd redelex-api-nest
+   ```
+2. **Instalar dependencias:**
+   **Bash**
+
+   ```
+   npm install
+   ```
+3. **Ejecutar en modo desarrollo:**
+   **Bash**
+
+   ```
+   npm run start:dev
+   ```
+
+   *La API estará disponible en: `http://localhost:4000/api`*
+4. **Compilar para producción:**
+   **Bash**
+
+   ```
+   npm run build
+   npm run start:prod
+   ```
+
+---
+
+## 🔑 Variables de Entorno
+
+Crea un archivo `.env` en la raíz con las siguientes claves:
+
+**Fragmento de código**
 
 ```
-src/
-├── config/
-│   └── database/
-│       └── database.module.ts         # Configuración MongoDB
-├── modules/
-│   ├── auth/                          # Módulo de Autenticación
-│   │   ├── controllers/
-│   │   │   └── auth.controller.ts     # Endpoints: register, login, reset
-│   │   ├── services/
-│   │   │   └── auth.service.ts        # Lógica de negocio
-│   │   ├── schemas/
-│   │   │   ├── user.schema.ts
-│   │   │   └── password-reset-token.schema.ts
-│   │   ├── guards/
-│   │   │   └── jwt-auth.guard.ts      # Guard con soporte para SYSTEM_TOKEN
-│   │   ├── strategies/
-│   │   │   └── jwt.strategy.ts        # Estrategia Passport JWT
-│   │   ├── dto/
-│   │   │   └── auth.dto.ts            # DTOs con validación
-│   │   └── auth.module.ts
-│   │
-│   ├── redelex/                       # Módulo de Redelex
-│   │   ├── controllers/
-│   │   │   └── redelex.controller.ts  # Endpoints protegidos
-│   │   ├── services/
-│   │   │   └── redelex.service.ts     # Integración con API Redelex
-│   │   ├── schemas/
-│   │   │   ├── redelex-token.schema.ts
-│   │   │   └── cedula-proceso.schema.ts
-│   │   ├── dto/
-│   │   │   └── redelex.dto.ts
-│   │   └── redelex.module.ts
-│   │
-│   └── mail/                          # Módulo de Correos
-│       ├── services/
-│       │   └── mail.service.ts        # Servicio de alto nivel
-│       ├── adapters/
-│       │   └── ms-graph-mail.adapter.ts  # Patrón Adaptador para MS Graph
-│       └── mail.module.ts
-│
-├── app.module.ts                      # Módulo raíz
-└── main.ts                            # Punto de entrada
-```
-
-## 🚀 Instalación
-
-### 1. Instalar dependencias
-
-```bash
-npm install
-```
-
-### 2. Configurar variables de entorno
-
-Crear archivo `.env` en la raíz:
-
-```env
-# Server
+# --- APP CONFIG ---
 PORT=4000
-
-# MongoDB
-MONGO_URI=mongodb://localhost:27017/redelex
-
-# JWT
-JWT_SECRET=tu_secreto_jwt_super_seguro
-
-# Sistema (Power Automate)
-SYSTEM_TASK_TOKEN=token_para_power_automate
-
-# Redelex API
-REDELEX_API_KEY=tu_api_key_de_redelex
-
-# Microsoft Graph (Correos)
-TENANT_ID_AD=tu_tenant_id
-CLIENT_ID_AD=tu_client_id
-CLIENT_SECRET_AD=tu_client_secret
-GRAPH_SCOPE=https://graph.microsoft.com/.default
-MAIL_DEFAULT_FROM=noreply@tudominio.com
-
-# Configuración de correos
-MAIL_BRAND_NAME=Estados Procesales
-MAIL_LOGO_URL=https://tudominio.com/logo.png
-MAIL_FOOTER_TEXT=Affi Latam · Todos los derechos reservados
-
-# Frontend (para enlaces de reset)
+NODE_ENV=development
 FRONT_BASE_URL=http://localhost:4200
+
+# --- DATABASE ---
+MONGO_URI=mongodb+srv://usuario:password@cluster.mongodb.net/db_name
+
+# --- SEGURIDAD ---
+JWT_SECRET=tu_secreto_jwt_seguro
+SYSTEM_TASK_TOKEN=token_largo_para_tareas_automatizadas
+
+# --- INTEGRACIÓN REDELEX ---
+REDELEX_API_KEY=tu_api_key_redelex
+
+# --- INTEGRACIÓN HUBSPOT ---
+HUBSPOT_ACCESS_TOKEN=tu_private_app_token
+
+# --- INTEGRACIÓN MICROSOFT GRAPH (CORREO) ---
+TENANT_ID_AD=azure_tenant_id
+CLIENT_ID_AD=azure_client_id
+CLIENT_SECRET_AD=azure_client_secret
+MAIL_DEFAULT_FROM=notificaciones@tu-dominio.com
+MAIL_REMINDER_TO=destinatario_reportes@tu-dominio.com
 ```
 
-### 3. Ejecutar en desarrollo
+---
 
-```bash
-npm run start:dev
-```
+## 🧩 Módulos del Sistema
 
-La API estará disponible en `http://localhost:4000/api`
+### 1. Inmobiliaria (Gestión de Clientes)
 
-### 4. Compilar para producción
+* **Importación Masiva:** Procesa archivos Excel para altas/bajas masivas de clientes.
+* **Sincronización de Estado:** Si una inmobiliaria se desactiva, bloquea automáticamente el acceso a todos sus usuarios asociados.
 
-```bash
-npm run build
-npm run start:prod
-```
+### 2. Redelex (Jurídica)
 
-## 📋 Endpoints Disponibles
+* **Consulta Inteligente:**
+  * *Live:* Consulta en tiempo real para Inmobiliarias.
+  * *Espejo:* Base de datos local para búsquedas rápidas por cédula (Affi).
+* **Tenant Isolation:** Valida matemáticamente que un usuario externo solo vea procesos donde es parte procesal.
 
-### Autenticación (`/api/auth`)
+### 3. Support (HubSpot)
 
-- `POST /api/auth/register` - Registrar usuario
-- `POST /api/auth/login` - Iniciar sesión
-- `POST /api/auth/request-password-reset` - Solicitar reset de contraseña
-- `POST /api/auth/reset-password` - Restablecer contraseña
+* Crea tickets de soporte y llamadas directamente en el CRM.
+* Autocompleta datos de contacto y empresa consultando la API de HubSpot en tiempo real.
 
-### Redelex (`/api/redelex`) 🔒 Requiere autenticación
+---
 
-- `GET /api/redelex/proceso/:id` - Detalle de proceso
-- `POST /api/redelex/sync-informe/:informeId` - Sincronizar cédula de procesos
-- `GET /api/redelex/procesos-por-identificacion/:identificacion` - Buscar por identificación
+## ☁️ Despliegue (Azure & GitHub Actions)
 
-### Health Check
+El proyecto cuenta con CI/CD automatizado mediante  **GitHub Actions** .
 
-- `GET /api/health` - Verificar estado de la API (sin autenticación)
+### Workflow: `master_redelex.yml`
 
-## 🔐 Autenticación
+Se ejecuta automáticamente al hacer push a la rama `master`.
 
-La API usa **JWT** (JSON Web Tokens) para autenticación. Después del login o registro, incluye el token en las peticiones:
+1. **Build:**
+   * Instala dependencias.
+   * Compila el proyecto (`npm run build`).
+   * Ejecuta pruebas (si aplica).
+2. **Deploy:**
+   * Despliega el artefacto compilado a  **Azure App Service** .
 
-```
-Authorization: Bearer <tu_token_jwt>
-```
+### Configuración requerida en GitHub
 
-### Token de Sistema (Power Automate)
+Asegurar que el secreto `AZUREAPPSERVICE_PUBLISHPROFILE_...` esté configurado en los *Settings* del repositorio con el perfil de publicación XML descargado de Azure.
 
-Para integraciones con Power Automate, puedes usar el `SYSTEM_TASK_TOKEN`:
-
-```
-Authorization: <SYSTEM_TASK_TOKEN>
-```
-
-## 🏛️ Patrones de Diseño Implementados
-
-1. **Inyección de Dependencias (DI)**: Todos los servicios usan DI de NestJS
-2. **Patrón Repositorio**: Mongoose como ORM
-3. **Patrón Adaptador**: `MsGraphMailAdapter` para integración con MS Graph
-4. **Guards**: `JwtAuthGuard` para proteger rutas
-5. **DTOs con Validación**: `class-validator` para validar payloads
-6. **Separación de Capas**: Controllers → Services → Repositories
-
-## 🧪 Validación de DTOs
-
-Los DTOs usan decoradores de `class-validator`:
-
-```typescript
-export class RegisterDto {
-  @IsString()
-  @IsNotEmpty()
-  name: string;
-
-  @IsEmail()
-  @IsNotEmpty()
-  email: string;
-
-  @MinLength(6)
-  password: string;
-}
-```
-
-## 📦 Dependencias Principales
-
-- **NestJS**: Framework progresivo para Node.js
-- **Mongoose**: ODM para MongoDB
-- **Passport JWT**: Autenticación con JWT
-- **class-validator**: Validación de DTOs
-- **bcryptjs**: Hash de contraseñas
-- **axios**: Cliente HTTP para APIs externas
-
-## 🔄 Diferencias con Express
-
-| Express                          | NestJS                                              |
-| -------------------------------- | --------------------------------------------------- |
-| `app.use(middleware)`          | `@UseGuards()`, `@UseInterceptors()`            |
-| `router.get('/path', handler)` | `@Get('path')` en controllers                     |
-| Funciones con `req, res`       | Decoradores:`@Body()`, `@Param()`, `@Query()` |
-| Middleware manual                | Guards, Pipes, Interceptors integrados              |
-| `try/catch` manual             | Exception Filters automáticos                      |
-
-## 📝 Notas Importantes
-
-1. **Validación automática**: Los DTOs validan automáticamente los payloads
-2. **Exception Filters**: Los errores se formatean automáticamente
-3. **Logs estructurados**: Usa el `Logger` de NestJS en lugar de `console.log`
-4. **ConfigService**: Accede a variables de entorno de forma tipada
-5. **Módulos independientes**: Cada módulo puede evolucionar de forma independiente
-
-## 🚧 Próximos Pasos
-
-- [ ] Agregar Swagger/OpenAPI para documentación automática
-- [ ] Implementar rate limiting
-- [ ] Agregar tests unitarios e integración
-- [ ] Implementar caché con Redis
-- [ ] Agregar health checks avanzados
-- [ ] Implementar monitoreo con Application Insights (Azure)`<p align="center">`
-  `<a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" />``</a>`
-
-</p>
+Desarrollado para Affi - Estados Procesales
