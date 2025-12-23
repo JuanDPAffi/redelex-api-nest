@@ -44,3 +44,5 @@ async function bootstrap() {
 }
 
 bootstrap();
+
+// Desarrollo Finalizado V1 Juan Diego Pinilla Montoya 23/12/2025
