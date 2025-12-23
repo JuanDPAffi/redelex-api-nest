@@ -29,7 +29,7 @@ export class RedelexService {
     }
   }
 
-  async getMisProcesosLive(userNit: string) {
+async getMisProcesosLive(userNit: string) {
     if (!this.apiKey) throw new Error('REDELEX_API_KEY no configurado');
 
     const data = await this.secureRedelexGet(
@@ -41,26 +41,58 @@ export class RedelexService {
     if (!rawString) return { success: true, identificacion: userNit, procesos: [] };
 
     const items = JSON.parse(rawString) as any[];
-    const nitBusqueda = userNit.trim();
-    const misProcesos = items.filter((item) => {
-      const nitInforme = String(item['Demandante - Identificacion'] || '');
-      return nitInforme.includes(nitBusqueda);
+    
+    const procesosMap = new Map<number, any>();
+
+    items.forEach((item) => {
+      const id = item['ID Proceso'];
+      
+      if (!procesosMap.has(id)) {
+        procesosMap.set(id, {
+          procesoId: id,
+          claseProceso: String(item['Clase Proceso'] ?? '').trim(),
+          numeroRadicacion: String(item['Numero Radicacion'] ?? '').replace(/'/g, '').trim(),
+          despacho: String(item['Despacho'] ?? '').trim(),
+          etapaProcesal: String(item['Etapa Procesal'] ?? '').trim(),
+          fechaRecepcionProceso: String(item['Fecha Recepcion Proceso'] ?? '').trim(),
+          sentencia: String(item['Sentencia'] ?? '').trim(),
+          ciudadInmueble: String(item['Ciudad'] ?? '').trim(),
+          demandadoNombre: '',
+          demandadoIdentificacion: '',
+          demandanteNombre: '',
+          demandanteIdentificacion: ''
+        });
+      }
+
+      const proceso = procesosMap.get(id);
+      const rol = String(item['Sujeto Intervencion'] || '').toUpperCase().trim();
+
+      if (rol === 'DEMANDANTE') {
+        proceso.demandanteNombre = String(item['Sujeto Nombre'] ?? '').trim();
+        if (item['Sujeto Identificacion']) {
+             proceso.demandanteIdentificacion = String(item['Sujeto Identificacion']).trim();
+        } else {
+             // Si no viene la columna explícita, intenta buscarla o dejarla vacía
+        }
+      } 
+      else if (rol === 'DEMANDADO') {
+        proceso.demandadoNombre = String(item['Sujeto Nombre'] ?? '').trim();
+        if (item['Sujeto Identificacion']) {
+             proceso.demandadoIdentificacion = String(item['Sujeto Identificacion']).trim();
+        }
+      }
     });
 
-    const procesosMapeados = misProcesos.map((item) => ({
-      procesoId: item['ID Proceso'],
-      claseProceso: String(item['Clase Proceso'] ?? '').trim(),
-      numeroRadicacion: String(item['Numero Radicacion'] ?? '').replace(/'/g, '').trim(),
-      demandadoNombre: String(item['Demandado - Nombre'] ?? '').trim(),
-      demandadoIdentificacion: String(item['Demandado - Identificacion'] ?? '').trim(),
-      demandanteNombre: String(item['Demandante - Nombre'] ?? '').trim(),
-      demandanteIdentificacion: String(item['Demandante - Identificacion'] ?? '').trim(),
-      fechaRecepcionProceso: String(item['Fecha Recepcion Proceso'] ?? '').trim(),
-      sentencia: String(item['Sentencia'] ?? '').trim(),
-      despacho: String(item['Despacho'] ?? '').trim(),
-      etapaProcesal: String(item['Etapa Procesal'] ?? '').trim(),
-      sentenciaPrimeraInstancia: String(item['Sentencia'] ?? '').trim(),
-      ciudadInmueble: String(item['Ciudad'] ?? '').trim(),
+    const nitBusqueda = userNit.trim();
+    
+    const procesosFiltrados = Array.from(procesosMap.values()).filter(p => {
+        const idDemandante = String(p.demandanteIdentificacion || '');
+        return idDemandante.includes(nitBusqueda);
+    });
+
+    const procesosMapeados = procesosFiltrados.map(p => ({
+        ...p,
+        sentenciaPrimeraInstancia: p.sentencia 
     }));
 
     return {
