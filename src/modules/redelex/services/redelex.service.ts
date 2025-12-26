@@ -175,7 +175,7 @@ export class RedelexService {
     let token = await this.getValidAuthToken();
 
     const headers = {
-      Authorization: token,
+      Authorization: `Bearer ${token}`,
       'api-license-id': this.licenseId,
     };
 
